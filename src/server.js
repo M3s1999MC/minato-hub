@@ -99,6 +99,16 @@ function createServer(secret) {
     }
     if (p === '/favicon.ico') return send(res, 204, '');
 
+  const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+  const ICON_MIME = {
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+  };
+    
     if (!p.startsWith('/api/')) throw new HubError(404, 'Ruta no encontrada');
     checkAuth(req);
 

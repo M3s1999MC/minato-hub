@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minato Hub</title>
+<style>
+:root{--bg:#0b0d10;--panel:#12151a;--line:#1f242c;--txt:#d7dde5;--mut:#7d8896;--acc:#4f9cff;--ok:#3ecf8e;--warn:#f5b942;--bad:#f0605d}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:16px;margin:0 12px 0 0;letter-spacing:.3px}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px 10px;color:var(--mut)}
+.chip b{color:var(--txt);font-weight:600}
+.spacer{flex:1}
+main{padding:18px;max-width:1200px;margin:0 auto}
+.bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.bar h2{font-size:14px;margin:0;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--mut);font-weight:500;font-size:12px}
+tr:last-child td{border-bottom:0}
+.mut{color:var(--mut)}.s{font-size:12px}
+.acts{white-space:nowrap}
+.btn{background:#1a1f27;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 12px;cursor:pointer;font:inherit}
+.btn:hover{border-color:#34404f}.btn:disabled{opacity:.5;cursor:default}
+.btn.sm{padding:3px 8px;font-size:12px;margin-right:4px}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#04111f;font-weight:600}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
+.b-ok{color:var(--ok);border-color:#1d4d39}.b-warn{color:var(--warn);border-color:#5a4619}.b-bad{color:var(--bad);border-color:#5a2625}.b-mut{color:var(--mut)}
+#console{margin-top:22px}
+#log{height:320px;overflow:auto;background:#07080a;border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+#log .err{color:var(--bad)}#log .hub{color:var(--acc)}#log .t{color:#4a5563}
+.overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:10}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;width:min(360px,92vw);display:flex;flex-direction:column;gap:10px}
+.card h2{margin:0}
+.err-t{color:var(--bad);min-height:18px;font-size:13px}
+input,textarea,select{width:100%;background:#0d1014;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font:inherit}
+input:focus,textarea:focus{outline:1px solid var(--acc)}
+textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;resize:vertical}
+dialog{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:0;width:min(560px,94vw)}
+dialog::backdrop{background:rgba(0,0,0,.65)}
+dialog form{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+dialog label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut)}
+dialog .full{grid-column:1/-1}
+dialog .chk{flex-direction:row;align-items:center;gap:8px;color:var(--txt)}
+dialog .chk input{width:auto}
+dialog h3{margin:0;grid-column:1/-1}
+dialog .foot{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+#toast{position:fixed;bottom:18px;right:18px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;display:none;max-width:80vw;z-index:20}
+</style>
+</head>
+<body>
+<div id="login" class="overlay" hidden>
+  <form id="loginForm" class="card">
+    <h2>Minato Hub</h2>
+    <span class="mut">Introduce tu MINATO_SECRET</span>
+    <input id="tok" type="password" autocomplete="current-password" required>
+    <button class="btn pri">Entrar</button>
+    <div id="loginErr" class="err-t"></div>
+  </form>
+</div>
+
+<header>
+  <h1>Minato Hub</h1>
+  <span class="chip">RAM hub <b id="m-ram">—</b></span>
+  <span class="chip">RAM libre <b id="m-free">—</b></span>
+  <span class="chip">Uptime <b id="m-up">—</b></span>
+  <span class="chip">Instancias <b id="m-inst">—</b></span>
+  <span class="spacer"></span>
+  <button class="btn" id="logout">Salir</button>
+</header>
+
+<main>
+  <div class="bar"><h2>Instancias</h2><button class="btn pri" id="new">+ Nueva instancia</button></div>
+  <div class="wrap"><table>
+    <thead><tr><th>Nombre</th><th>Estado</th><th>Nodo</th><th>Proceso</th><th>Acciones</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+
+  <section id="console" hidden>
+    <div class="bar"><h2 id="logtitle">Logs</h2><button class="btn sm" id="closelog">Cerrar</button></div>
+    <div id="log"></div>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <form id="form" method="dialog">
+    <h3 id="ftitle">Instancia</h3>
+    <label>Nombre<input id="f-name" required maxlength="60"></label>
+    <label>ID (único)<input id="f-id" pattern="[a-z0-9][a-z0-9_-]{1,39}" placeholder="auto"></label>
+    <label class="full">Repositorio (https:// o git@)<input id="f-repo" required></label>
+    <label>Rama<input id="f-branch" value="main"></label>
+    <label>Memoria máx. (MB)<input id="f-mem" type="number" min="32" max="16384" value="256"></label>
+    <label class="full">Comando de instalación<input id="f-install" value="npm install --omit=dev"></label>
+    <label class="full">Comando de arranque<input id="f-start" value="npm start" required></label>
+    <label>Nodo destino<input id="f-node" value="local"></label>
+    <span></span>
+    <label class="full">Variables de entorno (una por línea: CLAVE=valor)<textarea id="f-env" rows="5" spellcheck="false"></textarea></label>
+    <label class="chk"><input id="f-auto" type="checkbox" checked>Auto-reinicio</label>
+    <label class="chk"><input id="f-enabled" type="checkbox" checked>Habilitada (se restaura al iniciar el hub)</label>
+    <label class="chk full" id="deployRow"><input id="f-deploy" type="checkbox" checked>Desplegar al guardar</label>
+    <div class="foot"><button class="btn" type="button" id="cancel">Cancelar</button><button class="btn pri">Guardar</button></div>
+  </form>
+</dialog>
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let token = localStorage.getItem('minato_token') || '';
+let selected = null, logSince = 0, editing = null, loop = null;
+
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c);
+  return e;
+}
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 4500);
+}
+async function api(path, opts = {}) {
+  const r = await fetch('/api' + path, {
+    method: opts.method || 'GET',
+    headers: { 'x-minato-token': token, 'content-type': 'application/json' },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let data = null;
+  try { data = await r.json(); } catch {}
+  if (r.status === 401) { showLogin(); throw new Error('No autorizado'); }
+  if (!r.ok) throw new Error((data && data.error) || 'HTTP ' + r.status);
+  return data;
+}
+const fmtUp = (s) => {
+  if (s == null) return '—';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+};
+function badge(st) {
+  const ok = ['running'], warn = ['deploying', 'installing', 'stopping', 'backoff'], bad = ['error', 'failed', 'crashed', 'unreachable'];
+  const cls = ok.includes(st) ? 'b-ok' : warn.includes(st) ? 'b-warn' : bad.includes(st) ? 'b-bad' : 'b-mut';
+  return el('span', { class: 'badge ' + cls }, st);
+}
+
+function showLogin() { $('#login').hidden = false; clearInterval(loop); loop = null; }
+function hideLogin() { $('#login').hidden = true; if (!loop) loop = setInterval(() => { if (!document.hidden) refresh(); }, 3000); }
+
+async function refresh() {
+  try {
+    const [m, l] = await Promise.all([api('/metrics'), api('/instances')]);
+    $('#m-ram').textContent = m.hub.rss_mb + ' MB';
+    $('#m-free').textContent = m.system.free_mb + ' / ' + m.system.total_mb + ' MB';
+    $('#m-up').textContent = fmtUp(m.hub.uptime_s);
+    $('#m-inst').textContent = (m.instances.running) + ' activas / ' + (m.instances.total ?? '?');
+    renderRows(l.instances);
+  } catch (e) { if (e.message !== 'No autorizado') toast(e.message); }
+}
+
+function renderRows(list) {
+  const tb = $('#rows');
+  tb.replaceChildren();
+  if (!list.length) tb.append(el('tr', {}, el('td', { colspan: 5, class: 'mut' }, 'Sin instancias. Crea la primera con "+ Nueva instancia".')));
+  for (const i of list) {
+    const btn = (label, act) => el('button', { class: 'btn sm', onclick: () => doAct(i.id, act) }, label);
+    tb.append(el('tr', {},
+      el('td', {}, el('b', {}, i.name), el('div', { class: 'mut s' }, i.id + ' · ' + i.branch)),
+      el('td', {}, badge(i.status), i.next_restart_in_s != null ? el('div', { class: 'mut s' }, 'reinicio en ' + i.next_restart_in_s + 's') : null),
+      el('td', { class: 'mut' }, i.target_node || 'local'),
+      el('td', { class: 'mut s' }, 'PID ' + (i.pid ?? '—'), el('br'), 'up ' + fmtUp(i.uptime_s) + ' · ↻' + (i.restarts || 0)),
+      el('td', { class: 'acts' },
+        btn('Start', 'start'), btn('Stop', 'stop'), btn('Restart', 'restart'), btn('Deploy', 'deploy'),
+        el('button', { class: 'btn sm', onclick: () => openLogs(i.id, i.name) }, 'Logs'),
+        el('button', { class: 'btn sm', onclick: () => openForm(i) }, 'Editar'),
+        el('button', { class: 'btn sm danger', onclick: () => del(i) }, 'Eliminar'))));
+  }
+}
+
+async function doAct(id, act) {
+  try { await api(`/instances/${encodeURIComponent(id)}/${act}`, { method: 'POST', body: {} }); toast(act + ': ok'); }
+  catch (e) { toast(e.message); }
+  refresh();
+}
+async function del(i) {
+  if (!confirm(`¿Eliminar "${i.name}" y sus archivos? Esta acción no se puede deshacer.`)) return;
+  try { await api('/instances/' + encodeURIComponent(i.id), { method: 'DELETE' }); if (selected === i.id) closeLogs(); toast('Eliminada'); }
+  catch (e) { toast(e.message); }
+  refresh();
+}
+
+/* ---- logs ---- */
+let logTimer = null;
+function openLogs(id, name) {
+  selected = id; logSince = 0;
+  $('#console').hidden = false;
+  $('#logtitle').textContent = 'Logs · ' + name;
+  $('#log').replaceChildren();
+  clearInterval(logTimer);
+  pollLogs(); logTimer = setInterval(pollLogs, 1500);
+  $('#console').scrollIntoView({ behavior: 'smooth' });
+}
+function closeLogs() { selected = null; clearInterval(logTimer); $('#console').hidden = true; }
+async function pollLogs() {
+  if (!selected || document.hidden) return;
+  const id = selected;
+  try {
+    const d = await api(`/instances/${encodeURIComponent(id)}/logs?since=${logSince}`);
+    if (id !== selected) return;
+    const box = $('#log');
+    if (d.next < logSince) { box.replaceChildren(); logSince = 0; return; }
+    const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    for (const l of d.lines) {
+      const t = new Date(l.t).toTimeString().slice(0, 8);
+      box.append(el('div', { class: l.s }, el('span', { class: 't' }, t + ' '), l.m));
+    }
+    while (box.childElementCount > 600) box.firstElementChild.remove();
+    logSince = d.next;
+    if (stick) box.scrollTop = box.scrollHeight;
+  } catch {}
+}
+
+/* ---- formulario ---- */
+const envToText = (o) => Object.entries(o || {}).map(([k, v]) => k + '=' + v).join('\n');
+function textToEnv(t) {
+  const o = {};
+  for (const raw of t.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const idx = line.indexOf('=');
+    if (idx < 1) throw new Error('Línea de entorno inválida: ' + line);
+    o[line.slice(0, idx).trim()] = line.slice(idx + 1);
+  }
+  return o;
+}
+function openForm(i) {
+  editing = i ? i.id : null;
+  $('#ftitle').textContent = i ? 'Editar · ' + i.name : 'Nueva instancia';
+  $('#f-id').disabled = !!i; $('#f-id').value = i ? i.id : '';
+  $('#f-name').value = i ? i.name : '';
+  $('#f-repo').value = i ? i.repo_url : '';
+  $('#f-branch').value = i ? i.branch : 'main';
+  $('#f-mem').value = i ? i.max_memory_mb : 256;
+  $('#f-install').value = i ? i.install_cmd : 'npm install --omit=dev';
+  $('#f-start').value = i ? i.start_cmd : 'npm start';
+  $('#f-node').value = i ? i.target_node : 'local';
+  $('#f-env').value = i ? envToText(i.env_json) : '';
+  $('#f-auto').checked = i ? i.auto_restart : true;
+  $('#f-enabled').checked = i ? i.enabled : true;
+  $('#deployRow').hidden = !!i;
+  $('#dlg').showModal();
+}
+$('#form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  try {
+    const body = {
+      name: $('#f-name').value, repo_url: $('#f-repo').value, branch: $('#f-branch').value,
+      max_memory_mb: Number($('#f-mem').value), install_cmd: $('#f-install').value, start_cmd: $('#f-start').value,
+      target_node: $('#f-node').value || 'local', env_json: textToEnv($('#f-env').value),
+      auto_restart: $('#f-auto').checked, enabled: $('#f-enabled').checked,
+    };
+    if (editing) {
+      const r = await api('/instances/' + encodeURIComponent(editing), { method: 'PUT', body });
+      toast(r.restart_required ? 'Guardado. Reinicia la instancia para aplicar los cambios.' : 'Guardado');
+    } else {
+      if ($('#f-id').value) body.id = $('#f-id').value;
+      const r = await api('/instances', { method: 'POST', body });
+      if ($('#f-deploy').checked) await api(`/instances/${encodeURIComponent(r.id)}/deploy`, { method: 'POST', body: {} });
+      toast('Instancia creada');
+    }
+    $('#dlg').close(); refresh();
+  } catch (e) { toast(e.message); }
+});
+
+$('#new').onclick = () => openForm(null);
+$('#cancel').onclick = () => $('#dlg').close();
+$('#closelog').onclick = closeLogs;
+$('#logout').onclick = () => { localStorage.removeItem('minato_token'); token = ''; showLogin(); };
+$('#loginForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  token = $('#tok').value.trim();
+  $('#loginErr').textContent = '';
+  try { await api('/metrics'); localStorage.setItem('minato_token', token); hideLogin(); refresh(); }
+  catch (e) { $('#loginErr').textContent = e.message; }
+});
+
+(async () => {
+  if (!token) return showLogin();
+  try { await api('/metrics'); hideLogin(); refresh(); } catch { showLogin(); }
+})();
+</script>
+</body>
+</html>

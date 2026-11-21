@@ -34,9 +34,12 @@ async function init() {
       enabled       BOOLEAN NOT NULL DEFAULT TRUE,
       env_json      JSONB NOT NULL DEFAULT '{}'::jsonb,
       target_node   TEXT NOT NULL DEFAULT 'local',
+      deps_hash     TEXT,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     )`);
+
+  await pool.query(`ALTER TABLE minato_instances ADD COLUMN IF NOT EXISTS deps_hash TEXT`);
 }
 
 const q = (text, params) => pool.query(text, params);
@@ -73,6 +76,10 @@ async function updateInstance(id, patch) {
   return r.rows[0] || null;
 }
 
+async function setDepsHash(id, depsHash) {
+  await q('UPDATE minato_instances SET deps_hash = $2, updated_at = now() WHERE id = $1', [id, depsHash]);
+}
+
 async function deleteInstance(id) {
   return (await q('DELETE FROM minato_instances WHERE id = $1', [id])).rowCount > 0;
 }
@@ -85,4 +92,7 @@ async function close() {
   if (pool) await pool.end().catch(() => {});
 }
 
-module.exports = { init, listInstances, getInstance, insertInstance, updateInstance, deleteInstance, countInstances, close };
+module.exports = {
+  init, listInstances, getInstance, insertInstance, updateInstance,
+  setDepsHash, deleteInstance, countInstances, close,
+};

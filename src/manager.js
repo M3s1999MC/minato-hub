@@ -23,6 +23,7 @@ const BACKOFF_BASE_MS = 2000;
 const BACKOFF_MAX_MS = 60000;
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 const GIT_TIMEOUT_MS = 2 * 60 * 1000;
+const CYCLE_INTERVAL_MS = ((24 * 60 + 12) * 60 + 42) * 1000; // 24h 12m 42s = 87162000 ms
 
 // Variables del hub que SÍ se heredan a los hijos. Nada más (DATABASE_URL, MINATO_SECRET, etc. no pasan).
 const PASS_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'TEMP', 'TMP',
@@ -47,7 +48,7 @@ function rt(id) {
     r = {
       id, cfg: null, proc: null, pid: null, job: null, status: 'stopped', logs: new RingBuffer(LOG_LINES),
       startedAt: null, deployedAt: null, restarts: 0, fastCrashes: 0, timer: null, nextRestartAt: 0,
-      stopping: false, cancelled: false, busy: null, lastExit: null, onExit: [],
+      cycleTimer: null, stopping: false, cancelled: false, busy: null, lastExit: null, onExit: [],
     };
     runtimes.set(id, r);
   }
@@ -56,6 +57,33 @@ function rt(id) {
 
 function hubLog(r, msg) {
   r.logs.push('hub', redact(msg) + '\n');
+}
+
+function clearCycleTimer(r) {
+  if (r.cycleTimer) { clearInterval(r.cycleTimer); r.cycleTimer = null; }
+}
+
+function armCycleTimer(r, inst) {
+  clearCycleTimer(r);
+  if (shuttingDown || !inst || !inst.enabled || isRemote(inst)) return;
+  r.cycleTimer = setInterval(async () => {
+    if (shuttingDown || !r.cfg || !r.cfg.enabled) return;
+    if (r.busy) {
+      hubLog(r, 'Ciclo de 24h 12m 42s omitido: hay una operación en curso');
+      return;
+    }
+    try {
+      hubLog(r, 'Reinicio programado cada 24h 12m 42s…');
+      await withLock(r, 'restart', async () => {
+        clearTimer(r);
+        if (r.proc) await terminate(r);
+        await startLocal(r, r.cfg);
+      });
+    } catch (e) {
+      hubLog(r, `Error en reinicio programado: ${e.message}`);
+    }
+  }, CYCLE_INTERVAL_MS);
+  if (r.cycleTimer.unref) r.cycleTimer.unref();
 }
 
 async function computeDepsHash(dir) {
@@ -275,6 +303,7 @@ function spawnProcess(r, inst, dir) {
   r.status = 'running';
   r.startedAt = Date.now();
   r.stopping = false;
+  armCycleTimer(r, inst);
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (d) => r.logs.push('out', d));
@@ -372,6 +401,7 @@ async function startLocal(r, inst) {
 }
 
 async function stopLocal(r) {
+  clearCycleTimer(r);
   if (r.busy === 'deploy') {
     if (r.job) {
       r.cancelled = true;
@@ -397,6 +427,7 @@ async function doDeploy(r, inst, { forceInstall = false } = {}) {
   r.cancelled = false;
   try {
     clearTimer(r);
+    clearCycleTimer(r);
     if (r.proc) await terminate(r);
     r.status = 'deploying';
     hubLog(r, 'Deploy iniciado');
@@ -492,7 +523,11 @@ async function update(id, input) {
   const row = await db.updateInstance(id, v);
   if (!row) throw new HubError(404, 'Instancia no encontrada');
   const r = runtimes.get(id);
-  if (r) r.cfg = row;
+  if (r) {
+    r.cfg = row;
+    if (row.enabled && r.proc) armCycleTimer(r, row);
+    else clearCycleTimer(r);
+  }
   const d = await describe(row);
   d.restart_required = !isRemote(before) && !!(r && r.proc);
   return d;
@@ -507,6 +542,7 @@ async function remove(id, purge = true) {
     if (r) {
       if (r.busy) throw new HubError(409, `Operación en curso: ${r.busy}`);
       clearTimer(r);
+      clearCycleTimer(r);
       if (r.proc) await terminate(r);
     }
   }
@@ -590,6 +626,7 @@ async function stopAll() {
   const jobs = [];
   for (const r of runtimes.values()) {
     clearTimer(r);
+    clearCycleTimer(r);
     if (r.job) { r.cancelled = true; killTree(r.job, 'SIGKILL'); }
     if (r.proc) {
       if (r.stopping) jobs.push(new Promise((res) => r.onExit.push(res)));

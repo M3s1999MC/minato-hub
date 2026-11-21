@@ -1,7 +1,8 @@
 FROM node:22-slim
 # git es obligatorio: Minato clona los repos de cada instancia en tiempo de ejecución
+# python3 y python-is-python3 son necesarios para dependencias como yt-dlp-exec
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates openssh-client tini \
+ && apt-get install -y --no-install-recommends git ca-certificates openssh-client tini python3 python-is-python3 \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json ./

@@ -1,6 +1,7 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
@@ -38,6 +39,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isRemote = (inst) => !!inst.target_node && inst.target_node !== 'local';
 const redact = (s) => String(s).replace(/(\/\/)[^\/@\s:]+(:[^\/@\s]*)?@/g, '$1***@');
 const instDir = (id) => path.join(INSTANCES_DIR, id);
+const depsHashFile = (dir) => path.join(dir, '.minato-deps.sha256');
 
 function rt(id) {
   let r = runtimes.get(id);
@@ -54,6 +56,44 @@ function rt(id) {
 
 function hubLog(r, msg) {
   r.logs.push('hub', redact(msg) + '\n');
+}
+
+async function computeDepsHash(dir) {
+  const files = ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
+  const h = crypto.createHash('sha256');
+  let found = false;
+  for (const name of files) {
+    const p = path.join(dir, name);
+    try {
+      const buf = await fsp.readFile(p);
+      found = true;
+      h.update(`\0${name}\0`);
+      h.update(buf);
+    } catch { /* archivo opcional */ }
+  }
+  return found ? h.digest('hex') : null;
+}
+
+async function readSavedDepsHash(dir) {
+  try {
+    return (await fsp.readFile(depsHashFile(dir), 'utf8')).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveDepsHash(dir, hash) {
+  if (!hash) return;
+  await fsp.writeFile(depsHashFile(dir), hash + '\n', 'utf8');
+}
+
+async function needsInstall(dir) {
+  const hasModules = fs.existsSync(path.join(dir, 'node_modules'));
+  const currentHash = await computeDepsHash(dir);
+  if (!currentHash) return !hasModules;
+  if (!hasModules) return true;
+  const savedHash = await readSavedDepsHash(dir);
+  return savedHash !== currentHash;
 }
 
 /* ------------------------------ validación ------------------------------ */
@@ -353,7 +393,7 @@ async function stopLocal(r) {
   await terminate(r);
 }
 
-async function doDeploy(r, inst) {
+async function doDeploy(r, inst, { forceInstall = false } = {}) {
   r.cancelled = false;
   try {
     clearTimer(r);
@@ -361,16 +401,22 @@ async function doDeploy(r, inst) {
     r.status = 'deploying';
     hubLog(r, 'Deploy iniciado');
     await syncRepo(r, inst);
-    if (inst.install_cmd && inst.install_cmd.trim()) {
+    const dir = instDir(inst.id);
+    const shouldInstall = inst.install_cmd && inst.install_cmd.trim() && (forceInstall || await needsInstall(dir));
+    if (shouldInstall) {
       r.status = 'installing';
       hubLog(r, `Instalando: ${inst.install_cmd}`);
       await runCommand(r, 'Instalación', inst.install_cmd, null,
-        { cwd: instDir(inst.id), env: buildEnv(inst, false), timeout: INSTALL_TIMEOUT_MS });
+        { cwd: dir, env: buildEnv(inst, false), timeout: INSTALL_TIMEOUT_MS });
+      const newHash = await computeDepsHash(dir);
+      await saveDepsHash(dir, newHash);
+    } else if (inst.install_cmd && inst.install_cmd.trim()) {
+      hubLog(r, 'Dependencias sin cambios; se omite instalación');
     }
     r.deployedAt = Date.now();
     hubLog(r, 'Deploy completado');
     if (shuttingDown) return;
-    if (inst.enabled) { r.fastCrashes = 0; spawnProcess(r, inst, instDir(inst.id)); }
+    if (inst.enabled) { r.fastCrashes = 0; spawnProcess(r, inst, dir); }
     else r.status = 'stopped';
   } catch (e) {
     if (r.cancelled) { r.status = 'stopped'; }
@@ -379,12 +425,12 @@ async function doDeploy(r, inst) {
 }
 
 /** Adquiere el lock de forma síncrona y devuelve una promesa que nunca rechaza. */
-function startDeploy(inst) {
+function startDeploy(inst, opts) {
   const r = rt(inst.id);
   if (r.busy) throw new HubError(409, `Operación en curso: ${r.busy}`);
   r.busy = 'deploy';
   r.cfg = inst;
-  return doDeploy(r, inst).finally(() => { r.busy = null; });
+  return doDeploy(r, inst, opts).finally(() => { r.busy = null; });
 }
 
 /* ------------------------------ API pública ------------------------------ */
@@ -524,10 +570,11 @@ async function restoreAll() {
     const r = rt(inst.id);
     r.cfg = inst;
     try {
-      if (fs.existsSync(path.join(instDir(inst.id), '.git'))) {
+      const dir = instDir(inst.id);
+      if (fs.existsSync(path.join(dir, '.git')) && !(await needsInstall(dir))) {
         await withLock(r, 'start', () => startLocal(r, inst));
       } else {
-        await startDeploy(inst); // el sistema de archivos se perdió: clonar e instalar de nuevo
+        await startDeploy(inst);
       }
     } catch (e) {
       r.status = 'error';

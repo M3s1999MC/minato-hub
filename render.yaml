@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: minato-hub
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false            # pega aquí la cadena de conexión de Neon
+      - key: MINATO_SECRET
+        generateValue: true    # Render genera un secreto aleatorio
+      - key: MINATO_TRUST_PROXY
+        value: "1"

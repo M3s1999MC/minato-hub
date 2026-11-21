@@ -1,0 +1,12 @@
+{
+  "name": "minato-hub",
+  "version": "1.0.0",
+  "description": "Minato Hub: panel y gestor de hosting ligero multi-instancia (RAM baja, costo $0)",
+  "main": "src/index.js",
+  "private": true,
+  "scripts": {
+    "start": "node --max-old-space-size=96 src/index.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": { "pg": "^8.13.0" }
+}

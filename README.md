@@ -1,31 +1,45 @@
 # Minato Hub
 
-Lightweight, multi-instance hosting manager and control panel built primarily with native Node.js modules and PostgreSQL persistence. Designed to keep base memory usage low while managing multiple independent bots or services from a single dashboard.
+Panel y gestor de hosting ligero, multi-instancia y de costo $0 para bots y servicios Node.js.
+Solo depende de `pg` (PostgreSQL en Neon); la configuración de las instancias vive en la base de datos.
 
-## Key Features
+## Ejecutar en local
 
-- **Low Memory Footprint:** Relies on native Node.js modules (`http`, `fs`, `path`, `child_process`, `os`, `crypto`) without heavy web frameworks, keeping base overhead lean.
-- **Multi-Instance Management:** Create, configure, start, stop, restart, update, and remove multiple independent instances (such as bots, workers, or shared projects).
-- **Isolated Workspaces & Environment:** Each instance runs in its own isolated working directory (`git clone` / `git pull`) with its own environment variables and child heap memory limit (`--max-old-space-size`).
-- **PostgreSQL Persistence:** Stores instance definitions, environment variables, and runtime flags in PostgreSQL so configurations survive container restarts and ephemeral storage resets.
-- **Controlled Watchdog & Ring Buffer Logs:** Automatically restarts crashed instances with controlled retry/backoff logic and keeps a fixed-size circular log buffer per instance to prevent unbounded log memory growth.
-- **Protected Web Dashboard & Health Endpoint:** Includes a minimal dark UI for managing instances and viewing live logs, secured via `MINATO_SECRET`, alongside a lightweight `GET /health` endpoint.
-- **Multi-Node Ready:** Designed with node routing support so instances can be delegated to remote worker nodes in the future.
+```bash
+npm install
+cp .env.example .env     # completa DATABASE_URL y MINATO_SECRET
+npm start                # http://localhost:3000
+```
 
-## Environment Variables
+## Desplegar gratis en Render
 
-Configure these environment variables before starting Minato Hub:
+1. Crea una base de datos gratuita en [Neon](https://neon.tech) y copia su `DATABASE_URL`.
+2. En Render: **New → Blueprint** y selecciona este repositorio (usa `render.yaml` y el `Dockerfile`).
+3. Pega `DATABASE_URL` cuando lo pida. `MINATO_SECRET` se genera solo (míralo en *Environment*).
+4. Mantenlo despierto: el plan gratis duerme tras 15 min sin tráfico. Crea un monitor HTTP cada 5 min a
+   `https://TU-SERVICIO.onrender.com/health` (UptimeRobot o cron-job.org, ambos gratuitos).
 
-| Variable | Required | Description |
-| :--- | :---: | :--- |
-| `PORT` | No | HTTP port for the panel and API (defaults to `3000` or platform-provided `PORT`). |
-| `MINATO_SECRET` | Yes | Secret token required to authenticate API requests and access the control panel. |
-| `DATABASE_URL` | Yes | PostgreSQL connection string used to persist instances and configurations. |
+El disco de Render es efímero: en cada reinicio Minato vuelve a clonar e instalar las instancias habilitadas.
 
-## Quick Start
+## Desplegar en una VM (Oracle Cloud Always Free u otra)
 
-1. **Clone the repository and install dependencies:**
-   ```bash
-   git clone [https://github.com/your-user/minato-hub.git](https://github.com/your-user/minato-hub.git)
-   cd minato-hub
-   npm install
+```bash
+docker build -t minato-hub .
+docker run -d --name minato --restart unless-stopped -p 3000:3000 \
+  -e DATABASE_URL='...' -e MINATO_SECRET='...' -v minato-data:/data minato-hub
+```
+
+## API
+
+Todas las rutas `/api/*` requieren `x-minato-token: <MINATO_SECRET>` o `Authorization: Bearer <MINATO_SECRET>`.
+`GET /health` es público.
+
+| Método y ruta | Acción |
+|---|---|
+| `GET /api/metrics` | RAM, uptime y número de instancias |
+| `GET/POST /api/instances` | Listar / crear |
+| `GET/PUT/DELETE /api/instances/:id` | Ver / editar / eliminar |
+| `POST /api/instances/:id/{start,stop,restart,deploy}` | Control del proceso |
+| `GET /api/instances/:id/logs?since=N` | Últimas ~200 líneas |
+
+Nodos remotos: define `MINATO_NODES` (ver `.env.example`) y usa `target_node=<nombre>`.

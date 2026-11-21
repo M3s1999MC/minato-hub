@@ -12,7 +12,16 @@ const MAX_FAILS = 10;
 const FAIL_WINDOW_MS = 60 * 1000;
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
-const PANEL = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'));
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const PANEL = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'));
+const ICON_MIME = {
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+};
 const fails = new Map(); // ip -> { count, reset }
 
 function clientIp(req) {
@@ -97,18 +106,24 @@ function createServer(secret) {
         'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
       });
     }
-    if (p === '/favicon.ico') return send(res, 204, '');
 
-  const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-  const ICON_MIME = {
-    '.png': 'image/png',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.webp': 'image/webp',
-  };
-    
+    const iconMatch = /^\/(favicon\.(?:png|svg|ico|jpg|jpeg|webp)|icon\.(?:png|svg|ico|jpg|jpeg|webp))$/.exec(p);
+    if (iconMatch) {
+      if (m !== 'GET' && m !== 'HEAD') throw new HubError(405, 'Método no permitido');
+      const fileName = iconMatch[1];
+      const filePath = path.join(PUBLIC_DIR, fileName);
+      if (fs.existsSync(filePath)) {
+        const ext = path.extname(fileName).toLowerCase();
+        const buf = fs.readFileSync(filePath);
+        return send(res, 200, buf, {
+          'content-type': ICON_MIME[ext],
+          'cache-control': 'public, max-age=3600',
+        });
+      }
+      if (fileName === 'favicon.ico') return send(res, 204, '');
+      throw new HubError(404, 'Icono no encontrado');
+    }
+
     if (!p.startsWith('/api/')) throw new HubError(404, 'Ruta no encontrada');
     checkAuth(req);
 
